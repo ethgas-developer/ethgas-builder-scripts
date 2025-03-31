@@ -1,0 +1,5 @@
+services:
+  builder_register:
+    image: local_builder_register:latest
+    container_name: builder_register
+    env_file: .env
