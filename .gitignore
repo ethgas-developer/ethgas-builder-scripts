@@ -2,3 +2,5 @@
 .cb.env
 .DS_Store
 .env
+.env.mainnet
+.env.holesky
