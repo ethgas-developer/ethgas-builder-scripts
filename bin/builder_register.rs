@@ -399,12 +399,12 @@ async fn main() -> Result<()> {
             "EXCHANGE_API_BASE missing").into());
         }
     };
-    let bls_secret_key_hex_str = match env::var("BLS_SK") {
+    let bls_secret_key_hex_str = match env::var("BLS_SECRET_KEY") {
         Ok(hex_str) => hex_str,
         Err(_) => {
-            error!("Please set BLS_SK environment variable");
+            error!("Please set BLS_SECRET_KEY environment variable");
             return Err(std::io::Error::new(std::io::ErrorKind::Other,
-            "BLS_SK missing").into());
+            "BLS_SECRET_KEY missing").into());
         }
     };
     let decoded = decode(bls_secret_key_hex_str.trim_start_matches("0x")).expect("Failed to decode hex string");
