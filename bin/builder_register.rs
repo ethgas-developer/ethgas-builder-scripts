@@ -199,13 +199,15 @@ pub const GENESIS_VALIDATORS_ROOT: [u8; 32] = [0; 32];
 #[derive(Copy, Clone)]
 pub enum Chain {
     Mainnet,
-    Holesky
+    Holesky,
+    Hoodi
 }
 impl Chain {
     pub fn genesis_fork_version(&self) -> ForkVersion {
         match self {
             Chain::Mainnet => hex!("00000000"),
-            Chain::Holesky => hex!("01017000")
+            Chain::Holesky => hex!("01017000"),
+            Chain::Hoodi => hex!("10000910"),
         }
     }
 }
@@ -357,6 +359,8 @@ async fn main() -> Result<()> {
         chain = Chain::Holesky;
     } else if chain_str == "Mainnet" {
         chain = Chain::Mainnet;
+    } else if chain_str == "Hoodi" {
+        chain = Chain::Hoodi;
     } else {
         return Err(std::io::Error::new(std::io::ErrorKind::Other,
             "unsupported chain").into());
