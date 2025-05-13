@@ -4,3 +4,4 @@
 .env
 .env.mainnet
 .env.holesky
+.env.hoodi

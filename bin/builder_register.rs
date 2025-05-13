@@ -24,6 +24,7 @@ use tracing_subscriber::FmtSubscriber;
 struct EthgasExchangeService {
     exchange_api_base: String,
     eoa_signing_key: B256,
+    entity_name: String
 }
 
 struct EthgasBuilderService {
@@ -149,6 +150,7 @@ impl EthgasExchangeService {
         let mut exchange_api_url = Url::parse(&format!("{}{}", self.exchange_api_base, "/api/v1/user/login"))?;
         let mut res = client.post(exchange_api_url.to_string())
                 .query(&[("addr", signer.clone().address())])
+                .query(&[("name", self.entity_name.clone())])
                 .send()
                 .await?;
                 
@@ -403,6 +405,14 @@ async fn main() -> Result<()> {
             "EXCHANGE_API_BASE missing").into());
         }
     };
+    let entity_name = match env::var("ENTITY_NAME") {
+        Ok(name) => name,
+        Err(_) => {
+            error!("Please set ENTITY_NAME environment variable");
+            return Err(std::io::Error::new(std::io::ErrorKind::Other,
+            "ENTITY_NAME missing").into());
+        }
+    };
     let bls_secret_key_hex_str = match env::var("BLS_SECRET_KEY") {
         Ok(hex_str) => hex_str,
         Err(_) => {
@@ -433,12 +443,14 @@ async fn main() -> Result<()> {
 
     let exchange_service = EthgasExchangeService {
         exchange_api_base,
-        eoa_signing_key
+        eoa_signing_key,
+        entity_name
     };
     let access_jwt = Retry::spawn(FixedInterval::from_millis(500).take(5), || async { 
         let service = EthgasExchangeService {
             exchange_api_base: exchange_service.exchange_api_base.clone(),
             eoa_signing_key: exchange_service.eoa_signing_key.clone(),
+            entity_name: exchange_service.entity_name.clone(),
         };
         service.login().await.map_err(|err| {
             error!(?err, "Service failed");
