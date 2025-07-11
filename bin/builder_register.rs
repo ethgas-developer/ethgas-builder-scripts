@@ -106,6 +106,22 @@ struct AccessToken {
 }
 
 #[derive(Debug, Deserialize)]
+struct APIBuilderSignMsgResponse {
+    success: bool,
+    data: APIBuilderSignMsgResponseData
+}
+
+#[derive(Debug, Deserialize)]
+struct APIBuilderSignMsgResponseData {
+    message: Option<RegisteredInfo>
+}
+
+#[derive(Debug, Deserialize)]
+struct APIBuilderDeregisterResponse {
+    success: bool
+}
+
+#[derive(Debug, Deserialize)]
 struct APIBuilderRegisterResponse {
     success: bool,
     data: APIBuilderRegisterResponseData
@@ -113,30 +129,17 @@ struct APIBuilderRegisterResponse {
 
 #[derive(Debug, Deserialize)]
 struct APIBuilderRegisterResponseData {
-    available: bool,
-    verified: bool,
-    message: Option<RegisteredInfo>
+    results: Vec<APIBuilderRegisterResponseDataResult>,
 }
 
 #[derive(Debug, Deserialize)]
-struct APIBuilderDeregisterResponse {
-    success: bool,
-    data: APIBuilderDeregisterResponseData
+struct APIBuilderRegisterResponseDataResult {
+    publicKey: BlsPublicKey,
+    result: APIBuilderRegisterResponseDataResultResult
 }
 
 #[derive(Debug, Deserialize)]
-struct APIBuilderDeregisterResponseData {
-    message: Option<RegisteredInfo>
-}
-
-#[derive(Debug, Deserialize)]
-struct APIBuilderVerifyResponse {
-    success: bool,
-    data: APIBuilderVerifyResponseData
-}
-
-#[derive(Debug, Deserialize)]
-struct APIBuilderVerifyResponseData {
+struct APIBuilderRegisterResponseDataResultResult {
     result: usize,
     description: String
 }
@@ -155,7 +158,6 @@ impl EthgasExchangeService {
                 .await?;
                 
         let res_json_login = res.json::<APILoginResponse>().await?;
-        info!(exchange_login_eip712_message = ?res_json_login);
         
         let eip712_message: Eip712Message = serde_json::from_str(&res_json_login.data.eip712Message)
             .map_err(|e| eyre::eyre!("Failed to parse EIP712 message: {}", e))?;
@@ -186,7 +188,7 @@ impl EthgasExchangeService {
         let res_text_login_verify = res.text().await?;
         let res_json_verify: APILoginVerifyResponse = serde_json::from_str(&res_text_login_verify)
             .expect("Failed to parse login verification response");
-        info!("successfully obtain JWT from the exchange");
+        info!("successfully obtained access jwt from the exchange");
         Ok(res_json_verify.data.accessToken.token)
         // println!("API Response as JSON: {}", res.json::<Value>().await?);
         // Ok(String::from("test"))
@@ -259,46 +261,39 @@ impl EthgasBuilderService {
         let client = Client::new();
         info!(bls_pubkey = ?self.bls_pubkey);
         if self.enable_registration {
-            let mut exchange_api_url = Url::parse(&format!("{}{}", self.exchange_api_base, "/api/v1/builder/register"))?;
-            let mut res = client.post(exchange_api_url.to_string())
+            let mut exchange_api_url = Url::parse(&format!("{}{}", self.exchange_api_base, "/api/v1/builder/signingMessage"))?;
+            let mut res = client.get(exchange_api_url.to_string())
                 .header("Authorization", format!("Bearer {}", self.access_jwt))
                 .header("content-type", "application/json")
-                .query(&[("publicKey", self.bls_pubkey.to_string())])
                 .send()
                 .await?;
-            match res.json::<APIBuilderRegisterResponse>().await {
+            match res.json::<APIBuilderSignMsgResponse>().await {
                 Ok(res_json_request) => {
-                    info!(?res_json_request);
-
                     match res_json_request.data.message {
                         Some(api_builder_request_response_data_message) => {
                             let info = RegisteredInfo {
                                 eoaAddress: api_builder_request_response_data_message.eoaAddress
                             };
                             let request = SignConsensusRequest::builder(self.bls_pubkey.into()).with_msg(&info);
-                            info!("{:?}", request);
-
                             let domain = CommitBoostSigningService.compute_domain(self.chain, COMMIT_BOOST_DOMAIN);
                             let signing_root = CommitBoostSigningService.compute_signing_root(request.object_root, domain);
                             let signature = CommitBoostSigningService.sign_message(&self.bls_secret_key, &signing_root);
-                            exchange_api_url = Url::parse(&format!("{}{}", self.exchange_api_base, "/api/v1/builder/verify"))?;
+                            exchange_api_url = Url::parse(&format!("{}{}", self.exchange_api_base, "/api/v1/builder/register"))?;
                             res = client.post(exchange_api_url.to_string())
                                 .header("Authorization", format!("Bearer {}", self.access_jwt))
                                 .header("content-type", "application/json")
-                                .query(&[("publicKey", self.bls_pubkey.to_string())])
-                                .query(&[("signature", signature.to_string())])
+                                .query(&[("publicKeys", self.bls_pubkey.to_string())])
+                                .query(&[("signatures", signature.to_string())])
                                 .send()
                                 .await?;
 
                             // println!("API Response as JSON: {}", res.json::<Value>().await?);
-                            match res.json::<APIBuilderVerifyResponse>().await {
-                                Ok(res_json_verify) => {
-                                    info!(exchange_registration_response = ?res_json_verify);
-                                    
-                                    if res_json_verify.data.result == 0 {
+                            match res.json::<APIBuilderRegisterResponse>().await {
+                                Ok(res_json) => {                                    
+                                    if res_json.data.results[0].result.result == 0 {
                                         info!("successful builder registration");
                                     } else {
-                                        error!("fail to register");
+                                        error!("fail to register: {}", res_json.data.results[0].result.description);
                                     }
                                 },
                                 Err(e) => error!("Failed to parse builder verification response: {}", e)
@@ -316,16 +311,15 @@ impl EthgasBuilderService {
             let res = client.post(exchange_api_url.to_string())
                 .header("Authorization", format!("Bearer {}", self.access_jwt))
                 .header("content-type", "application/json")
-                .query(&[("publicKey", self.bls_pubkey.to_string())])
+                .query(&[("publicKeys", self.bls_pubkey.to_string())])
                 .send()
                 .await?;
             match res.json::<APIBuilderDeregisterResponse>().await {
                 Ok(res_json) => {
-                    info!(?res_json);
                     if res_json.success {
-                        info!("successful de-registration!");
+                        info!("successful deregistration!");
                     } else {
-                        error!("failed to de-register");
+                        error!("failed to deregister");
                     }
                 },
                 Err(err) => {
