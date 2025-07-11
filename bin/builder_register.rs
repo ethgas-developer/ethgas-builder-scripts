@@ -101,6 +101,22 @@ struct APILoginVerifyResponseData {
 }
 
 #[derive(Debug, Deserialize)]
+struct APIUserUpdateResponse {
+    success: bool,
+    data: APIUserUpdateResponseData
+}
+
+#[derive(Debug, Deserialize)]
+struct APIUserUpdateResponseData {
+    user: APIUserUpdateResponseDataUser
+}
+
+#[derive(Debug, Deserialize)]
+struct APIUserUpdateResponseDataUser {
+    displayName: String
+}
+
+#[derive(Debug, Deserialize)]
 struct AccessToken {
     token: String
 }
@@ -153,7 +169,6 @@ impl EthgasExchangeService {
         let mut exchange_api_url = Url::parse(&format!("{}{}", self.exchange_api_base, "/api/v1/user/login"))?;
         let mut res = client.post(exchange_api_url.to_string())
                 .query(&[("addr", signer.clone().address())])
-                .query(&[("name", self.entity_name.clone())])
                 .send()
                 .await?;
                 
@@ -189,6 +204,22 @@ impl EthgasExchangeService {
         let res_json_verify: APILoginVerifyResponse = serde_json::from_str(&res_text_login_verify)
             .expect("Failed to parse login verification response");
         info!("successfully obtained access jwt from the exchange");
+
+        exchange_api_url = Url::parse(&format!("{}{}", self.exchange_api_base, "/api/v1/user/update"))?;
+        res = client.post(exchange_api_url.to_string())
+                .header("Authorization", format!("Bearer {}", res_json_verify.data.accessToken.token))
+                .header("content-type", "application/json")
+                .query(&[("displayName", self.entity_name.clone())])
+                .send()
+                .await?;
+        match res.json::<APIUserUpdateResponse>().await {
+            Ok(res_json) => {
+                if res_json.data.user.displayName != self.entity_name.clone() {
+                    warn!("failed to set the user name")
+                }
+            },
+            Err(e) => warn!("failed to set the user name: {e}")
+        }
         Ok(res_json_verify.data.accessToken.token)
         // println!("API Response as JSON: {}", res.json::<Value>().await?);
         // Ok(String::from("test"))
