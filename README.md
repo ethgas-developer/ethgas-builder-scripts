@@ -2,7 +2,7 @@
 Builders can use this repo for on-boarding their BLS public keys to ETHGas Exchange
 
 ## Get Started
-* clone one of `.env.example.xxx` as `.env` and fill in the values
+* clone one of `.env.example.<env>` as `.env` and fill in the values
     * `BLS_PUBKEY` and `BLS_SECRET_KEY` should be from the same key pair
     * `EOA_SIGNING_KEY` is your registered or to-be-registered account on ETHGas Exchange
     * `ENTITY_NAME` is your company/entity name
